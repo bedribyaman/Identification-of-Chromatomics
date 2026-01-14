@@ -1,0 +1,80 @@
+# install.packages("BiocManager")
+# BiocManager::install("proDA")
+
+library(proDA)
+
+# Adjust the path to where you saved the file
+pg <- read.delim("report.pg_matrix.tsv",
+                 stringsAsFactors = FALSE,
+                 check.names = FALSE)  # keep raw column names
+# Identify the intensity columns (here: the raw file paths)
+intensity_cols <- grep("^D:", colnames(pg), value = TRUE)  # Windows paths start with D: in your snippet
+
+# If that regex is too specific, you can also do:
+# intensity_cols <- colnames(pg)[5:6]
+
+abundance_matrix <- as.matrix(pg[, intensity_cols])
+
+# Use Protein.Group as rownames (MaxQuant-like)
+rownames(abundance_matrix) <- pg$Protein.Group
+
+# Give short, clean sample names
+colnames(abundance_matrix) <- c("rep1", "rep2")  # rename as you prefer
+# If any zeros are present and should be treated as missing:
+abundance_matrix[abundance_matrix == 0] <- NA
+
+# Log2 transform
+abundance_matrix <- log2(abundance_matrix)
+normalized_abundance_matrix <- median_normalization(abundance_matrix)
+
+#Quality control
+# Fraction of missing values per sample
+colMeans(is.na(normalized_abundance_matrix))
+
+# Approximate distance between samples (here just 2)
+da <- dist_approx(normalized_abundance_matrix, by_sample = TRUE)
+
+da$mean   # 2x2 distance matrix
+da$sd     # associated uncertainty
+sample_info_df <- data.frame(
+  name      = colnames(normalized_abundance_matrix),
+  replicate = c(1, 2),
+  stringsAsFactors = FALSE
+)
+fit <- proDA(normalized_abundance_matrix,
+             design   = ~ 1,              # no condition term
+             col_data = sample_info_df)
+library(dplyr)      # make sure it's loaded
+library(tidyr)
+
+# From now on, always qualify the functions explicitly:
+top_abundant <- summary_tbl %>%
+  dplyr::arrange(desc(mean_log2_abundance)) %>%
+  dplyr::select(
+    name, Gene.Names, Protein.Names,
+    mean_log2_abundance, n_obs, n_approx, s2
+  ) %>%
+  dplyr::slice_head(n = 20)
+
+View(top_abundant)
+library(ggplot2)
+library(tibble)
+
+plot_df <- tibble::as_tibble(normalized_abundance_matrix,
+                             rownames = "name")
+
+ggplot(plot_df, aes(x = rep1, y = rep2)) +
+  geom_point(alpha = 0.4, size = 1) +
+  geom_abline(slope = 1, intercept = 0, color = "red") +
+  theme_bw()
+#intensity distribution
+library(ggplot2)
+library(tibble)
+
+plot_df <- tibble::as_tibble(normalized_abundance_matrix,
+                             rownames = "name")
+
+ggplot(plot_df, aes(x = rep1, y = rep2)) +
+  geom_point(alpha = 0.4, size = 1) +
+  geom_abline(slope = 1, intercept = 0, color = "red") +
+  theme_bw()
