@@ -1,0 +1,56 @@
+library(readxl)
+library(dplyr)
+df <- read_excel("ProteinGroups.xlsx")
+#Keeping the proteins that have been represented at least by 3 peptides 
+df_filt <- df %>%
+    filter(`Peptides 1-a` >= 3,
+           `Peptides 1-b` >= 3) 
+library(tidyr)
+library(ggplot2)
+markers <- c("TUBB",       # beta-tubulin
+             "GAPDH",
+             "ACTB",       # beta-actin
+             "LMNB1",      # lamin B1
+             "LMNA",       # lamin A/C (if you want it too)
+             "H4C1", "H1-5"
+df_markers <- df %>%
+  filter(Genes %in% markers) %>%
+  select(Genes, `Log2 Abundance 1-a`, `Log2 Abundance 1-b`)
+df_long <- df_markers %>%
+  pivot_longer(cols = starts_with("Log2 Abundance"),
+               names_to = "Sample",
+               values_to = "log2_abund")
+df_long <- df_long %>%
+  group_by(Sample) %>%
+  mutate(norm_log2 = (log2_abund - mean(log2_abund, na.rm = TRUE)) /
+                       sd(log2_abund, na.rm = TRUE)) %>%
+  ungroup()
+df_long <- df_long %>%
+  mutate(Location = case_when(
+    Genes %in% c("H4C1", "H1-5", "H1-0") ~ "Chromatin",   # histones [file:1]
+    Genes %in% c("LMNB1", "LMNA")         ~ "Nuclear lamina",
+    Genes %in% c("TUBB")                  ~ "Cytoskeleton (MT)",
+    Genes %in% c("ACTB")                  ~ "Cytoskeleton (Actin)",
+    Genes %in% c("GAPDH")                 ~ "Cytosol"
+  ))
+
+loc_cols <- c(
+  "Chromatin"         = "#1b9e77",
+  "Nuclear lamina"    = "#d95f02",
+  "Cytoskeleton (MT)" = "#7570b3",
+  "Cytoskeleton (Actin)" = "#e7298a",
+  "Cytosol"           = "#66a61e"
+)
+ggplot(df_long,
+       aes(x = Genes, y = norm_log2, fill = Location)) +
+  geom_col(width = 0.7, color = "black") +
+  geom_text(aes(label = round(norm_log2, 2)),
+            vjust = ifelse(df_long$norm_log2 >= 0, -0.3, 1.2),
+            size = 3) +
+  facet_wrap(~ Sample, nrow = 1) +
+  scale_fill_manual(values = loc_cols) +
+  labs(x = "Protein",
+       y = "Normalized log2 abundance",
+       fill = "Expected location") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
